@@ -5,3 +5,7 @@ target
 pom.xml
 sparkGuessMyClick.iml
 src/main/resources/data-students.json
+project
+spark-2.4.4-bin-hadoop2.7
+build.sbt
+data-students.json
