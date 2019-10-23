@@ -1,0 +1,7 @@
+# ignore following folders
+.idea
+data
+target
+pom.xml
+sparkGuessMyClick.iml
+src/main/resources/data-students.json
