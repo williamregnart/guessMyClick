@@ -39,7 +39,7 @@ object Main2 extends App{
 
 	val cleaned_data = refined_data
 		.withColumn("interests",
-			when(refined_data("interests").isNotNull, Cleaner.udf_renameInterestByRow(refined_data("interests")))
+			when(refined_data("interests").isNotNull, Cleaner.renameInterestByRow(refined_data("interests")))
 				.otherwise("null")
 		)
   	.drop("user")
