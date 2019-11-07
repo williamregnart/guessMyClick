@@ -1,4 +1,4 @@
-name := "web_intelligence"
+name := "guessMyClick"
 
 version := "0.1"
 
