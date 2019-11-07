@@ -186,7 +186,8 @@ object GuessMyClick {
 			Logger.getLogger("org").setLevel(Level.OFF)
 			Logger.getLogger("akka").setLevel(Level.OFF)
 
-			val debug = args.length == 2 && args(1) == "--DEBUG"
+			val debug = args.contains("--DEBUG")
+			val train = args.contains("--TRAIN")
 
 			val context = SparkSession
 				.builder()
@@ -205,24 +206,30 @@ object GuessMyClick {
 			val processedData = processData(data, showSteps = debug)
 			println("--data processed--")
 
-			val Array(trainData, testData) = processedData.randomSplit(Array(0.8, 0.2))
-
 			val model = constructModel()
 
-			//println("--training model--")
-			//val trainedModel = trainModel(model, trainData)
-			//saveModel(trainedModel)
-			//println("--model  trained--")
+			var predictions: DataFrame = null
 
-			println("--loading model--")
-			val trainedModel = loadModel("model")
-			println("--model loaded--")
+			if (train) {
+				println("--training model--")
+				val Array(trainData, testData) = processedData.randomSplit(Array(0.8, 0.2))
+				val trainedModel = trainModel(model, trainData)
+				saveModel(trainedModel)
+				println("--model  trained--")
 
-			println("--predicting--")
-			val predictions = predict(trainedModel, processedData)
+				println("--predicting--")
+				predictions = predict(trainedModel, testData)
 
-			println("--evaluating--")
-			evaluateModel(model, predictions)
+				println("--evaluating--")
+				evaluateModel(model, predictions)
+			} else {
+				println("--loading model--")
+				val trainedModel = loadModel("model")
+				println("--model loaded--")
+
+				println("--predicting--")
+				predictions = predict(trainedModel, processedData)
+			}
 
 			predictions.show(10, truncate = false)
 
@@ -233,14 +240,14 @@ object GuessMyClick {
 
 			val ordered_labeled_data = labeled_data.select("label", "appOrSite", "bidfloor", "city", "exchange", "impid", "interests", "media", "network", "os", "publisher", "size", "timestamp", "type", "user")
 
-			ordered_labeled_data.show(10)
+			ordered_labeled_data.show(10, truncate = false)
 
-			ordered_labeled_data.repartition(1)
-				.write
-				.mode ("overwrite")
-				.format("com.databricks.spark.csv")
-				.option("header", "true")
-				.save("output.csv")
+			//ordered_labeled_data.repartition(1)
+			//	.write
+			//	.mode ("overwrite")
+			//	.format("com.databricks.spark.csv")
+			//	.option("header", "true")
+			//	.save("output.csv")
 
 			context.stop()
 		}
