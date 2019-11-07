@@ -1,39 +1,69 @@
-package rtb
-
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.ml.Pipeline
 import org.apache.spark.ml.classification.LogisticRegression
 import org.apache.spark.ml.evaluation.BinaryClassificationEvaluator
 import org.apache.spark.ml.feature.{OneHotEncoderEstimator, StringIndexer, VectorAssembler}
 import org.apache.spark.ml.tuning.{CrossValidator, CrossValidatorModel, ParamGridBuilder}
-import org.apache.spark.sql.functions.{col, concat_ws, not, when}
+import org.apache.spark.sql.expressions.UserDefinedFunction
+import org.apache.spark.sql.functions.{col, concat_ws, not, udf, when}
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
+
+import scala.util.matching.Regex
 
 object GuessMyClick {
 
 	def processData(data: DataFrame, showSteps: Boolean): DataFrame = {
+		def clean_network: UserDefinedFunction = {
+			udf { (s: String) =>
+				val ethernet = new Regex("1(.*)")
+				val wifi = new Regex("2(.*)")
+				val cell1 = new Regex("3(.*)")
+				val cell2 = new Regex("4(.*)")
+				val cell3 = new Regex("5(.*)")
+				val cell4 = new Regex("6(.*)")
+
+				s match {
+					case ethernet(x) => "Ethernet"
+					case wifi(x) => "Wifi"
+					case cell1(x) => "Unknown Cellular"
+					case cell2(x) => "2G Cellular"
+					case cell3(x) => "3G Cellular"
+					case cell4(x) => "4G Cellular"
+					case _ => "Unknown"
+				}
+			}
+		}
+
+		def renameInterestByRow: UserDefinedFunction = {
+			udf(
+				(s: String) => {
+					val regex = new Regex("-(.*)");
+					val arrayOfInterests = s.split(',')
+						.map(interest => regex.replaceAllIn(interest, ""))
+					arrayOfInterests.mkString(" ");
+				}
+			)
+		}
+
 		val refined_data = data
 			.withColumn("label",
 				when(col("label") === true, 1)
 					.otherwise(0)
 			)
-			.withColumn("network",
-				Cleaner.clean_network(data("network"))
+			.withColumn("newNetwork",
+				clean_network(data("network"))
 			)
 			.withColumn("newSize",
 				when(data("size").isNotNull, concat_ws(" ", data("size")))
 					.otherwise("Unknown")
 			)
-			.drop("size")
-
-		val cleaned_data = refined_data
-			.withColumn("interests",
-				when(refined_data("interests").isNotNull, Cleaner.renameInterestByRow(refined_data("interests")))
+			.withColumn("newType", col("type"))
+			.withColumn("newInterests",
+				when(data("interests").isNotNull, renameInterestByRow(data("interests")))
 					.otherwise("null")
 			)
-			.drop("user")
 
-		val columns = cleaned_data.drop("label").columns
+		val columns = refined_data.select("appOrSite", "publisher", "newNetwork", "newSize", "newType", "newInterests").columns
 
 		val indexers = columns.map(
 			col => new StringIndexer()
@@ -51,30 +81,33 @@ object GuessMyClick {
 		val pipeline = new Pipeline()
 			.setStages(indexers ++ encoders)
 
-		val encoded_data = pipeline.fit(cleaned_data).transform(cleaned_data)
+		val encoded_data = pipeline.fit(refined_data).transform(refined_data)
 
 		val encoded_columns = columns.map(col => "encoded_" + col)
+		println(encoded_columns.mkString(" "))
 
 		val vector_column_assembler = new VectorAssembler()
 			.setInputCols(encoded_columns)
 			.setOutputCol("features")
 
-		vector_column_assembler.transform(encoded_data)
+		val vector_column_assembled_data = vector_column_assembler.transform(encoded_data)
 
-		val features_label_data = vector_column_assembler.transform(encoded_data).select("features", "label")
+		val features_label_data = vector_column_assembled_data.select("features", "label")
 
 		if (showSteps) {
 			println("---data---")
 			data.show(10, truncate = false)
-			println("---cleaned data---")
-			cleaned_data.show(10, truncate = false)
+			println("---refined data---")
+			refined_data.show(10, truncate = false)
 			println("---encoded data---")
 			encoded_data.show(10, truncate = false)
+			println("---vector assembled data---")
+			vector_column_assembled_data.show(10, truncate = false)
 			println("---features label data---")
 			features_label_data.show(10, truncate = false)
 		}
 
-		features_label_data
+		vector_column_assembled_data
 	}
 
 	def constructModel(): CrossValidator = {
@@ -165,32 +198,49 @@ object GuessMyClick {
 
 			println("--loading data--")
 			val data = context.read.json(args(0))
-				.select("appOrSite", "network", "type", "publisher", "size", "label", "interests", "user")
 
 			println("--data loaded--")
+
 			println("--processing data--")
-
 			val processedData = processData(data, showSteps = debug)
-
 			println("--data processed--")
 
 			val Array(trainData, testData) = processedData.randomSplit(Array(0.8, 0.2))
 
 			val model = constructModel()
 
-			//		println("--training model--")
-			//		val trainedModel = trainModel(model, trainData)
-			//		saveModel(trainedModel)
-			//		println("--model  trained--")
+			//println("--training model--")
+			//val trainedModel = trainModel(model, trainData)
+			//saveModel(trainedModel)
+			//println("--model  trained--")
 
 			println("--loading model--")
 			val trainedModel = loadModel("model")
 			println("--model loaded--")
 
 			println("--predicting--")
-			val predictions = predict(trainedModel, testData)
+			val predictions = predict(trainedModel, processedData)
 
+			println("--evaluating--")
 			evaluateModel(model, predictions)
+
+			predictions.show(10, truncate = false)
+
+			val labeled_data = predictions
+  				.select("appOrSite", "bidfloor", "city", "exchange", "impid", "interests", "media", "network", "os", "publisher", "size", "timestamp", "type", "user", "prediction")
+  				.withColumn("label", col("prediction").cast("Boolean"))
+  				.drop("prediction")
+
+			val ordered_labeled_data = labeled_data.select("label", "appOrSite", "bidfloor", "city", "exchange", "impid", "interests", "media", "network", "os", "publisher", "size", "timestamp", "type", "user")
+
+			ordered_labeled_data.show(10)
+
+			ordered_labeled_data.repartition(1)
+				.write
+				.mode ("overwrite")
+				.format("com.databricks.spark.csv")
+				.option("header", "true")
+				.save("output.csv")
 
 			context.stop()
 		}
