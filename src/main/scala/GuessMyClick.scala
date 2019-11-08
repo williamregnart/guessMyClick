@@ -69,7 +69,7 @@ object GuessMyClick {
 			col => new StringIndexer()
 				.setInputCol(col)
 				.setOutputCol("indexed_" + col)
-				.setHandleInvalid("skip")
+				.setHandleInvalid("keep")
 		)
 
 		val encoders = columns.map(
@@ -92,8 +92,6 @@ object GuessMyClick {
 
 		val vector_column_assembled_data = vector_column_assembler.transform(encoded_data)
 
-		val features_label_data = vector_column_assembled_data.select("features", "label")
-
 		if (showSteps) {
 			println("---data---")
 			data.show(10, truncate = false)
@@ -103,8 +101,6 @@ object GuessMyClick {
 			encoded_data.show(10, truncate = false)
 			println("---vector assembled data---")
 			vector_column_assembled_data.show(10, truncate = false)
-			println("---features label data---")
-			features_label_data.show(10, truncate = false)
 		}
 
 		vector_column_assembled_data
@@ -181,7 +177,7 @@ object GuessMyClick {
 
 	def main(args: Array[String]): Unit = {
 		if (args.length == 0) {
-			println("usage: guessMyClick dataset.json [--DEBUG]")
+			println("usage: guessMyClick dataset.json [--TRAIN] [--DEBUG]")
 		} else {
 			Logger.getLogger("org").setLevel(Level.OFF)
 			Logger.getLogger("akka").setLevel(Level.OFF)
@@ -229,6 +225,7 @@ object GuessMyClick {
 
 				println("--predicting--")
 				predictions = predict(trainedModel, processedData)
+				println(s"predicted ${predictions.count()} values")
 			}
 
 			predictions.show(10, truncate = false)
@@ -242,12 +239,16 @@ object GuessMyClick {
 
 			ordered_labeled_data.show(10, truncate = false)
 
-			//ordered_labeled_data.repartition(1)
-			//	.write
-			//	.mode ("overwrite")
-			//	.format("com.databricks.spark.csv")
-			//	.option("header", "true")
-			//	.save("output.csv")
+			val stringify = udf((vs: Seq[String]) => vs match {
+				case null => null
+				case _    => s"""[${vs.mkString(",")}]"""
+			})
+
+			ordered_labeled_data
+				.withColumn("size", stringify(col("size")))
+				.repartition(1)
+				.write.option("header", "true")
+				.csv("output")
 
 			context.stop()
 		}
