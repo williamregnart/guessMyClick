@@ -36,4 +36,4 @@ assemblyMergeStrategy in assembly := {
 /* including scala bloats your assembly jar unnecessarily, and may interfere with
    spark runtime */
 //assemblyOption in assembly := (assemblyOption in assembly).value.copy(includeScala = false)
-//assemblyJarName in assembly := "guessmyclick.jar"
+assemblyJarName in assembly := "guessMyClick.jar"

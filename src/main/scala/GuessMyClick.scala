@@ -1,8 +1,9 @@
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.ml.Pipeline
-import org.apache.spark.ml.classification.LogisticRegression
+import org.apache.spark.ml.classification.{LogisticRegression, RandomForestClassifier}
 import org.apache.spark.ml.evaluation.BinaryClassificationEvaluator
 import org.apache.spark.ml.feature.{OneHotEncoderEstimator, StringIndexer, VectorAssembler}
+import org.apache.spark.ml.regression.RandomForestRegressor
 import org.apache.spark.ml.tuning.{CrossValidator, CrossValidatorModel, ParamGridBuilder}
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{col, concat_ws, not, udf, when}
@@ -57,13 +58,12 @@ object GuessMyClick {
 				when(data("size").isNotNull, concat_ws(" ", data("size")))
 					.otherwise("Unknown")
 			)
-			.withColumn("newType", col("type"))
 			.withColumn("newInterests",
 				when(data("interests").isNotNull, renameInterestByRow(data("interests")))
 					.otherwise("null")
 			)
 
-		val columns = refined_data.select("appOrSite", "publisher", "newNetwork", "newSize", "newType", "newInterests").columns
+		val columns = refined_data.select("appOrSite", "type", "publisher", "newNetwork", "newSize", "newInterests").columns
 
 		val indexers = columns.map(
 			col => new StringIndexer()
