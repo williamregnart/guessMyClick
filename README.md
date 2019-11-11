@@ -19,6 +19,13 @@ To launch the program follow the instructions:
 `--DEBUG` show debug information
 `--TRAIN` trains a new model on the given dataset
 
+## Requirements
+
+To run this application, you need to have installed:
+* Scala 2.12.10
+* Spark 2.4.4
+* Java 1.8
+
 ## Train a new model
 
 Please make sure that if a folder named `models` exists, you delete it beforehand.
